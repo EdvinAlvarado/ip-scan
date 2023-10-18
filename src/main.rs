@@ -1,6 +1,6 @@
+use clap::Parser;
 use ipnet::Ipv4AddrRange;
 use main_error::MainError;
-use std::net::Ipv4Addr;
 use std::process::Command;
 use std::thread;
 use thiserror::Error;
@@ -13,9 +13,10 @@ enum ScanError {
     PingCommandError(#[from] std::io::Error),
 }
 
-fn ping(ip: Ipv4Addr, count: Option<u32>) -> Result<bool, ScanError> {
+
+fn ping<S: AsRef<std::ffi::OsStr>>(ip: S, count: Option<u32>) -> Result<bool, ScanError> {
     let mut cmd = Command::new("ping");
-    cmd.arg(ip.to_string());
+    cmd.arg(ip);
     if let Some(c) = count {
         cmd.args(["-n", &c.to_string()]);
     }
@@ -33,25 +34,51 @@ macro_rules! ping {
     };
 }
 
+
+/// scan ips or hostnames to see if pingable
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// start ip
+    #[arg(short, long)]
+    from: Option<String>,
+    /// end ip
+    #[arg(short, long)]
+    to: Option<String>,
+}
+
+
 fn main() -> Result<(), MainError> {
-    let mut args = std::env::args();
-    args.next();
-    let from = args.next().ok_or(ScanError::MissingParameter)?.parse()?;
-    let to = args.next().ok_or(ScanError::MissingParameter)?.parse()?;
+    let args = Args::parse();
+    let hosts: Vec<String> = match (args.from.is_some(), args.to.is_some()) {
+        (true, true) => {
+            let from = args.from.unwrap().parse()?;
+            let to = args.to.unwrap().parse()?;
+            Ipv4AddrRange::new(from, to)
+                .map(|ip| ip.to_string())
+                .collect()
+        }
+        (false, false) => {
+            let stdin = std::io::stdin();
+            stdin.lines().map(|ol| ol.unwrap()).collect()
+        }
+        (true, false) | (false, true) => {
+            return Err(ScanError::MissingParameter.into());
+        }
+    };
 
     let mut threads = vec![];
-    let ips = Ipv4AddrRange::new(from, to);
-    for ip in ips {
+    for host in hosts {
         let t = thread::spawn(move || {
-            if ping!(ip).unwrap() {
-                println!("{}", ip);
-                return Some(ip);
+            if ping!(&host).unwrap() {
+                println!("{}", host);
+                return Some(host);
             }
             None
         });
         threads.push(t);
     }
-    let _answered_ips: Vec<Ipv4Addr> = threads
+    let _answered_hosts: Vec<String> = threads
         .into_iter()
         .map(|t| t.join().unwrap())
         .filter_map(|o| o)
