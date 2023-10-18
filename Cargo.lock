@@ -133,8 +133,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "scan-ip"
-version = "2.0.0"
+name = "scan"
+version = "3.0.0"
 dependencies = [
  "clap",
  "ipnet",
