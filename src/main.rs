@@ -8,7 +8,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 enum ScanError {
-    #[error("Wrong Arguments. Did you mix reading iprange wih reading from file?")]
+    #[error("Wrong Arguments. Check whether input method was mixed.")]
     WrongArguments,
     #[error("Ping command incorrect or no ping exe available.")]
     PingCommandError(#[from] std::io::Error),
