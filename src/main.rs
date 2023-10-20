@@ -35,19 +35,19 @@ macro_rules! ping {
 }
 
 /// Scan ips or hostnames to see if pingable.
-/// Can use -f and -t to scan a range of IP Addresses.
-/// For hostnames, pipe a list hostnames.
+/// Scan an IP range from to.
+/// For hostnames, pipe a list of hostnames/ips or pass a file including lines of hostnames/ips.
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Args {
-    /// start ip
+    /// start IP address
     from: Option<String>,
-    /// end ip
+    /// end IP address
     to: Option<String>,
-    /// read file with lines of hostnames and/or ips
+    /// Read hostnames/ips from this file
     #[arg(short, long)]
     file: Option<PathBuf>,
-    /// flat to read piped.
+    /// Flag to read from pipe.
     #[arg(short, long, action=clap::ArgAction::SetTrue)]
     pipe: bool,
 }
