@@ -55,19 +55,19 @@ struct Args {
 fn main() -> Result<(), MainError> {
     let args = Args::parse();
     let hosts: Vec<String> = match (args.from, args.to, args.file, args.pipe) {
-        (Some(from), Some(to), None, false) => {
-            let f = from.parse()?;
-            let t = to.parse()?;
-            Ipv4AddrRange::new(f, t).map(|ip| ip.to_string()).collect()
-        }
-        (None, None, Some(file_path), false) => std::fs::read_to_string(file_path)?
+        (Some(from), Some(to), None, false) => 
+			Ipv4AddrRange::new(from.parse()?, to.parse()?)
+			.map(|ip| ip.to_string())
+			.collect(),
+        (None, None, Some(file_path), false) => 
+			std::fs::read_to_string(file_path)?
             .lines()
             .map(|s| s.to_string())
             .collect(),
-        (None, None, None, true) => {
-            let stdin = std::io::stdin();
-            stdin.lines().map(|ol| ol.unwrap()).collect()
-        }
+        (None, None, None, true) =>
+			std::io::stdin().lines()
+			.map(|ol| ol.unwrap())
+			.collect(),
         _ => {
             return Err(ScanError::WrongArguments.into());
         }
