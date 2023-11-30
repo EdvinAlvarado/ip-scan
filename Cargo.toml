@@ -1,12 +1,12 @@
 [package]
 name = "scan"
-version = "3.0.2"
+version = "3.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 thiserror = "1.0.50"
-ipnet = "2.8.0"
+ipnet = "2.9.0"
 main_error = "0.1.2"
-clap = { version = "4.4.6", features = ["derive"] }
+clap = { version = "4.4.10", features = ["derive"] }

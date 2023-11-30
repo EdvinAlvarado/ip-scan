@@ -12,26 +12,31 @@ enum ScanError {
     WrongArguments,
     #[error("Ping command incorrect or no ping exe available.")]
     PingCommandError(#[from] std::io::Error),
+    #[error("Output is not utf8.")]
+    PingOutputUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error("Output did not return True or False")]
+    PingOutputError,
 }
 
-fn ping<S: AsRef<std::ffi::OsStr>>(ip: S, count: Option<u32>) -> Result<bool, ScanError> {
-    let mut cmd = Command::new("ping");
-    cmd.arg(ip);
-    if let Some(c) = count {
-        cmd.args(["-n", &c.to_string()]);
+fn ping<S: AsRef<std::ffi::OsStr> + std::fmt::Display>(ip: S) -> Result<bool, ScanError> {
+    let test_cmd = format!(
+        "Test-NetConnection {} | Select -ExpandProperty \"PingSucceeded\"| echo",
+        ip
+    );
+    let mut cmd = Command::new("powershell");
+    cmd.arg("-Command");
+    cmd.arg(test_cmd);
+
+    let raw_output = cmd.output()?.stdout;
+    let mut output = String::from_utf8(raw_output)?;
+	// There are two leftover \n or \r
+	output.pop();
+	output.pop();
+    match output.as_str() {
+        "True" => Ok(true),
+        "False" => Ok(false),
+        _ => Err(ScanError::PingOutputError),
     }
-
-    let exit_code = cmd.output().map_err(ScanError::PingCommandError)?.status;
-    Ok(exit_code.success())
-}
-
-macro_rules! ping {
-    ($a: expr) => {
-        ping($a, None)
-    };
-    ($a: expr, $b: expr) => {
-        ping($a, $b)
-    };
 }
 
 /// Scan ips or hostnames to see if pingable.
@@ -55,19 +60,14 @@ struct Args {
 fn main() -> Result<(), MainError> {
     let args = Args::parse();
     let hosts: Vec<String> = match (args.from, args.to, args.file, args.pipe) {
-        (Some(from), Some(to), None, false) => 
-			Ipv4AddrRange::new(from.parse()?, to.parse()?)
-			.map(|ip| ip.to_string())
-			.collect(),
-        (None, None, Some(file_path), false) => 
-			std::fs::read_to_string(file_path)?
+        (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?)
+            .map(|ip| ip.to_string())
+            .collect(),
+        (None, None, Some(file_path), false) => std::fs::read_to_string(file_path)?
             .lines()
             .map(|s| s.to_string())
             .collect(),
-        (None, None, None, true) =>
-			std::io::stdin().lines()
-			.map(|ol| ol.unwrap())
-			.collect(),
+        (None, None, None, true) => std::io::stdin().lines().map(|ol| ol.unwrap()).collect(),
         _ => {
             return Err(ScanError::WrongArguments.into());
         }
@@ -76,7 +76,7 @@ fn main() -> Result<(), MainError> {
     let mut threads = vec![];
     for host in hosts {
         let t = thread::spawn(move || {
-            if ping!(&host).unwrap() {
+            if ping(&host).unwrap() {
                 println!("{}", host);
                 return Some(host);
             }
