@@ -15,7 +15,7 @@ enum ScanError {
     #[error("Output is not utf8.")]
     PingOutputUtf8Error(#[from] std::string::FromUtf8Error),
     #[error("Output did not return True or False")]
-    PingOutputError,
+    PingOutputError(String),
 }
 
 fn ping<S: AsRef<std::ffi::OsStr> + std::fmt::Display>(ip: S) -> Result<bool, ScanError> {
@@ -29,14 +29,18 @@ fn ping<S: AsRef<std::ffi::OsStr> + std::fmt::Display>(ip: S) -> Result<bool, Sc
 
     let raw_output = cmd.output()?.stdout;
     let mut output = String::from_utf8(raw_output)?;
-	// There are two leftover \n or \r
-	output.pop();
-	output.pop();
-    match output.as_str() {
-        "True" => Ok(true),
-        "False" => Ok(false),
-        _ => Err(ScanError::PingOutputError),
-    }
+    // There are two leftover \n or \r
+    output.pop();
+    output.pop();
+	if output.contains("True") {
+		Ok(true)
+	}
+	else if output.contains("False") {
+		Ok(false)
+	}
+	else {
+        Err(ScanError::PingOutputError(output))
+	}
 }
 
 /// Scan ips or hostnames to see if pingable.
