@@ -28,19 +28,15 @@ fn ping<S: AsRef<std::ffi::OsStr> + std::fmt::Display>(ip: S) -> Result<bool, Sc
     cmd.arg(test_cmd);
 
     let raw_output = cmd.output()?.stdout;
-    let mut output = String::from_utf8(raw_output)?;
-    // There are two leftover \n or \r
-    output.pop();
-    output.pop();
-	if output.contains("True") {
-		Ok(true)
-	}
-	else if output.contains("False") {
-		Ok(false)
-	}
-	else {
+    let output = String::from_utf8(raw_output)?;
+
+    if output.contains("True") {
+        Ok(true)
+    } else if output.contains("False") {
+        Ok(false)
+    } else {
         Err(ScanError::PingOutputError(output))
-	}
+    }
 }
 
 /// Scan ips or hostnames to see if pingable.
