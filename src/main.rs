@@ -50,22 +50,28 @@ fn string_to_ipaddr(s: String) -> Result<IpAddr, ScanError> {
     }
 }
 
+fn pipe_to_ipaddrs() -> Result<Vec<IpAddr>, ScanError> {
+    std::io::stdin().lock()
+        .lines()
+        .map(|rstring| rstring.map_err(ScanError::IoError).and_then(string_to_ipaddr))
+        .collect::<Result<Vec<IpAddr>, ScanError>>()
+}
+
+fn read_file_to_ipaddrs(file_path: PathBuf) -> Result<Vec<IpAddr>, ScanError> {
+    std::fs::read_to_string(file_path)?
+        .lines()
+        .map(std::string::ToString::to_string)
+        .map(string_to_ipaddr)
+        .collect::<Result<Vec<IpAddr>, ScanError>>()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), MainError> {
     let args = Args::parse();
     let hosts: Vec<IpAddr> = match (args.from, args.to, args.file, args.pipe) {
-        (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?)
-            .map(Into::into)
-            .collect(),
-        (None, None, Some(file_path), false) => std::fs::read_to_string(file_path)?
-            .lines()
-            .map(std::string::ToString::to_string)
-            .map(string_to_ipaddr)
-            .collect::<Result<Vec<IpAddr>, _>>()?,
-        (None, None, None, true) => std::io::stdin().lock()
-                                                    .lines()
-                                                    .map(|rstring| rstring.map_err(ScanError::IoError).and_then(string_to_ipaddr))
-            .collect::<Result<Vec<IpAddr>, ScanError>>()?,
+        (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?).map(Into::into).collect(),
+        (None, None, Some(file_path), false) => read_file_to_ipaddrs(file_path)?,
+        (None, None, None, true) => pipe_to_ipaddrs()?,
         _ => {
             return Err(ScanError::WrongArguments.into());
         }
