@@ -2,9 +2,10 @@ use clap::Parser;
 use ipnet::Ipv4AddrRange;
 use main_error::MainError;
 use std::path::PathBuf;
-use std::process::Command;
-use std::thread;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::process::Command;
+use tokio::sync::Semaphore;
 
 #[derive(Error, Debug)]
 enum ScanError {
@@ -15,27 +16,26 @@ enum ScanError {
     #[error("Output is not utf8.")]
     PingOutputUtf8Error(#[from] std::string::FromUtf8Error),
     #[error("Output did not return True or False")]
-    PingOutputError(String),
+    PingOutputError((String, String)),
 }
 
-fn ping<S: AsRef<std::ffi::OsStr> + std::fmt::Display>(ip: S) -> Result<bool, ScanError> {
+async fn ping(ip: String) -> Result<Option<String>, ScanError> {
     let test_cmd = format!(
-        "Test-NetConnection {} | Select -ExpandProperty \"PingSucceeded\"| echo",
-        ip
+        "Test-NetConnection {ip} | Select -ExpandProperty \"PingSucceeded\"| echo"
     );
     let mut cmd = Command::new("powershell");
     cmd.arg("-Command");
     cmd.arg(test_cmd);
 
-    let raw_output = cmd.output()?.stdout;
+    let raw_output = cmd.output().await?.stdout;
     let output = String::from_utf8(raw_output)?;
 
     if output.contains("True") {
-        Ok(true)
+        Ok(Some(ip))
     } else if output.contains("False") {
-        Ok(false)
+        Ok(None)
     } else {
-        Err(ScanError::PingOutputError(output))
+        Err(ScanError::PingOutputError((ip, output)))
     }
 }
 
@@ -57,7 +57,8 @@ struct Args {
     pipe: bool,
 }
 
-fn main() -> Result<(), MainError> {
+#[tokio::main]
+async fn main() -> Result<(), MainError> {
     let args = Args::parse();
     let hosts: Vec<String> = match (args.from, args.to, args.file, args.pipe) {
         (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?)
@@ -65,30 +66,33 @@ fn main() -> Result<(), MainError> {
             .collect(),
         (None, None, Some(file_path), false) => std::fs::read_to_string(file_path)?
             .lines()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
-        (None, None, None, true) => std::io::stdin().lines().map(|ol| ol.unwrap()).collect(),
+        (None, None, None, true) => std::io::stdin().lines().collect::<Result<Vec<String>, _>>()?,
         _ => {
             return Err(ScanError::WrongArguments.into());
         }
     };
 
-    let mut threads = vec![];
+    let semaphore = Arc::new(Semaphore::new(8)); // Limit to 8 concurrent pings
+    let mut tasks = Vec::with_capacity(hosts.len());
     for host in hosts {
-        let t = thread::spawn(move || {
-            if ping(&host).unwrap() {
-                println!("{}", host);
-                return Some(host);
-            }
-            None
+        let permit = semaphore.clone().acquire_owned().await?;
+        let t = tokio::spawn(async move {
+            let _permit = permit; // Keep the permit alive for the duration of the task
+            ping(host).await
         });
-        threads.push(t);
+        tasks.push(t);
     }
-    let _answered_hosts: Vec<String> = threads
-        .into_iter()
-        .map(|t| t.join().unwrap())
-        .filter_map(|o| o)
-        .collect();
+
+    for task in tasks {
+        match task.await? {
+            Ok(Some(host)) => println!("{host}"),
+            Ok(None)  => (),
+            Err(ScanError::PingOutputError((host, output))) => eprintln!("Error pinging {host}: {output}"),
+            Err(e) => eprintln!("Error pinging: {e}"),
+        }
+    }
 
     Ok(())
 }
