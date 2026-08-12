@@ -1,27 +1,12 @@
-use clap::Parser;
+use clap::{Parser};
 use ipnet::Ipv4AddrRange;
-use main_error::MainError;
 use std::path::PathBuf;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::sync::Semaphore;
 use std::net::IpAddr;
 use std::io::BufRead;
 use std::net::ToSocketAddrs;
-
-#[derive(Error, Debug)]
-enum ScanError {
-    #[error("Wrong Arguments. Check whether input method was mixed.")]
-    WrongArguments,
-    #[error("IO Error:")]
-    IoError(#[from] std::io::Error),
-    #[error("Output is not utf8.")]
-    PingOutputUtf8Error(#[from] std::string::FromUtf8Error),
-    #[error("Could not parse IP address.")]
-    AddressError(#[from] std::net::AddrParseError),
-    #[error("Could not ping")]
-    PingError(#[from] ping::Error),
-}
+use anyhow::{Result, anyhow};
 
 
 /// Scan ips or hostnames to see if pingable.
@@ -42,38 +27,38 @@ struct Args {
     pipe: bool,
 }
 
-fn string_to_ipaddr(s: String) -> Result<IpAddr, ScanError> {
+fn string_to_ipaddr(s: String) -> Result<IpAddr> {
     let ip= s.parse();
     match ip {
         Ok(ip) => Ok(ip),
-        Err(e) => Ok(format!("{s}:0").to_socket_addrs()?.next().ok_or(ScanError::AddressError(e))?.ip()),
+        Err(_) => Ok(format!("{s}:0").to_socket_addrs()?.next().ok_or_else(|| anyhow!("Couldn't parse to IP address nor find IP address with hostname"))?.ip()),
     }
 }
 
-fn pipe_to_ipaddrs() -> Result<Vec<IpAddr>, ScanError> {
+fn pipe_to_ipaddrs() -> Result<Vec<IpAddr>> {
     std::io::stdin().lock()
         .lines()
-        .map(|rstring| rstring.map_err(ScanError::IoError).and_then(string_to_ipaddr))
-        .collect::<Result<Vec<IpAddr>, ScanError>>()
+        .map(|rstring| rstring.map_err(|e| anyhow!("Failed to pipe in values or non-UTF-8 values found: {e}")).and_then(string_to_ipaddr))
+        .collect::<Result<Vec<IpAddr>>>()
 }
 
-fn read_file_to_ipaddrs(file_path: PathBuf) -> Result<Vec<IpAddr>, ScanError> {
+fn read_file_to_ipaddrs(file_path: PathBuf) -> Result<Vec<IpAddr>> {
     std::fs::read_to_string(file_path)?
         .lines()
         .map(std::string::ToString::to_string)
         .map(string_to_ipaddr)
-        .collect::<Result<Vec<IpAddr>, ScanError>>()
+        .collect::<Result<Vec<IpAddr>>>()
 }
 
 #[tokio::main]
-async fn main() -> Result<(), MainError> {
+async fn main() -> Result<()> {
     let args = Args::parse();
     let hosts: Vec<IpAddr> = match (args.from, args.to, args.file, args.pipe) {
         (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?).map(Into::into).collect(),
         (None, None, Some(file_path), false) => read_file_to_ipaddrs(file_path)?,
         (None, None, None, true) => pipe_to_ipaddrs()?,
         _ => {
-            return Err(ScanError::WrongArguments.into());
+            return Err(anyhow!("Invalid arguments. Use either --from and --to for IP range, --file for a file of hostnames/ips, or --pipe to read from stdin."));
         }
     };
 

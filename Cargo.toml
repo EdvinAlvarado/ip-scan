@@ -10,10 +10,10 @@ strip = true # Automatically strip symbols from the binary
 [dependencies]
 thiserror = "2.0"
 ipnet = "2.12"
-main_error = "0.1.2"
 clap = { version = "4.6", features = ["derive"] }
 tokio = { version = "1.53", features = ["full"] }
 ping = { version = "0.9.0", features = ["tokio"] }
+anyhow = "1.0"
 
 [lints.clippy]
 # UM, ACTUALLY
