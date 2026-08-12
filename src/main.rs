@@ -13,7 +13,7 @@ use std::net::ToSocketAddrs;
 enum ScanError {
     #[error("Wrong Arguments. Check whether input method was mixed.")]
     WrongArguments,
-    #[error("Ping command incorrect or no ping exe available.")]
+    #[error("IO Error:")]
     IoError(#[from] std::io::Error),
     #[error("Output is not utf8.")]
     PingOutputUtf8Error(#[from] std::string::FromUtf8Error),
@@ -46,7 +46,7 @@ fn string_to_ipaddr(s: String) -> Result<IpAddr, ScanError> {
     let ip= s.parse();
     match ip {
         Ok(ip) => Ok(ip),
-        Err(e) => Ok(s.to_socket_addrs()?.next().ok_or(ScanError::AddressError(e))?.ip()),
+        Err(e) => Ok(format!("{s}:0").to_socket_addrs()?.next().ok_or(ScanError::AddressError(e))?.ip()),
     }
 }
 
@@ -83,18 +83,39 @@ async fn main() -> Result<(), MainError> {
         let permit = semaphore.clone().acquire_owned().await?;
         let t = tokio::spawn(async move {
             let _permit = permit; // Keep the permit alive for the duration of the task
-            ping::new(host).send()
+            match ping::new(host).send() {
+                Ok(_) => println!("{host}"),
+                Err(e) => eprintln!("Error pinging {host}: {e}"),
+            }
         });
         tasks.push(t);
     }
 
     for task in tasks {
-        match task.await? {
-            Ok(pr) => println!("{}", pr.source),
-            Err(ping::Error::IoError { error: _ }) => (),
-            Err(e) => eprintln!("Error pinging: {e}"),
-        }
+        task.await?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    static LOCALHOST_IPS: std::sync::LazyLock<[IpAddr; 2]>  = std::sync::LazyLock::new(||  [IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
+    #[test]
+    fn file_to_ipaddr() {
+        let file = PathBuf::from("tests/hostnames.txt");
+        let ipaddrs = read_file_to_ipaddrs(file).unwrap();
+        for ip in &ipaddrs {
+            assert_eq!(LOCALHOST_IPS.contains(ip), true);
+        }
+    }
+    #[test]
+    fn socket_address() {
+        let ip = string_to_ipaddr("localhost".to_string()).unwrap();
+
+        assert_eq!(LOCALHOST_IPS.contains(&ip), true);
+    }
 }
