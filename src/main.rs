@@ -1,13 +1,12 @@
-use clap::{Parser};
+use anyhow::{Result, anyhow};
+use clap::Parser;
 use ipnet::Ipv4AddrRange;
+use std::io::BufRead;
+use std::net::IpAddr;
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use std::net::IpAddr;
-use std::io::BufRead;
-use std::net::ToSocketAddrs;
-use anyhow::{Result, anyhow};
-
 
 /// Scan ips or hostnames to see if pingable.
 /// Scan an IP range from to.
@@ -28,17 +27,28 @@ struct Args {
 }
 
 fn string_to_ipaddr(s: String) -> Result<IpAddr> {
-    let ip= s.parse();
+    let ip = s.parse();
     match ip {
         Ok(ip) => Ok(ip),
-        Err(_) => Ok(format!("{s}:0").to_socket_addrs()?.next().ok_or_else(|| anyhow!("Couldn't parse to IP address nor find IP address with hostname"))?.ip()),
+        Err(_) => Ok(format!("{s}:0")
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| {
+                anyhow!("Couldn't parse to IP address nor find IP address with hostname")
+            })?
+            .ip()),
     }
 }
 
 fn pipe_to_ipaddrs() -> Result<Vec<IpAddr>> {
-    std::io::stdin().lock()
+    std::io::stdin()
+        .lock()
         .lines()
-        .map(|rstring| rstring.map_err(|e| anyhow!("Failed to pipe in values or non-UTF-8 values found: {e}")).and_then(string_to_ipaddr))
+        .map(|rstring| {
+            rstring
+                .map_err(|e| anyhow!("Failed to pipe in values or non-UTF-8 values found: {e}"))
+                .and_then(string_to_ipaddr)
+        })
         .collect::<Result<Vec<IpAddr>>>()
 }
 
@@ -54,11 +64,15 @@ fn read_file_to_ipaddrs(file_path: PathBuf) -> Result<Vec<IpAddr>> {
 async fn main() -> Result<()> {
     let args = Args::parse();
     let hosts: Vec<IpAddr> = match (args.from, args.to, args.file, args.pipe) {
-        (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?).map(Into::into).collect(),
+        (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?)
+            .map(Into::into)
+            .collect(),
         (None, None, Some(file_path), false) => read_file_to_ipaddrs(file_path)?,
         (None, None, None, true) => pipe_to_ipaddrs()?,
         _ => {
-            return Err(anyhow!("Invalid arguments. Use either --from and --to for IP range, --file for a file of hostnames/ips, or --pipe to read from stdin."));
+            return Err(anyhow!(
+                "Invalid arguments. Use either --from and --to for IP range, --file for a file of hostnames/ips, or --pipe to read from stdin."
+            ));
         }
     };
 
@@ -88,7 +102,12 @@ mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-    static LOCALHOST_IPS: std::sync::LazyLock<[IpAddr; 2]>  = std::sync::LazyLock::new(||  [IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
+    static LOCALHOST_IPS: std::sync::LazyLock<[IpAddr; 2]> = std::sync::LazyLock::new(|| {
+        [
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+        ]
+    });
     #[test]
     fn file_to_ipaddr() {
         let file = PathBuf::from("tests/hostnames.txt");
