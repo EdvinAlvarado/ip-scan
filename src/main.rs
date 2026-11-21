@@ -1,5 +1,5 @@
-use anyhow::{Result, anyhow};
 use clap::Parser;
+use color_eyre::eyre::{Result, eyre};
 use ipnet::Ipv4AddrRange;
 use std::io::BufRead;
 use std::net::IpAddr;
@@ -33,9 +33,7 @@ fn string_to_ipaddr(s: String) -> Result<IpAddr> {
         Err(_) => Ok(format!("{s}:0")
             .to_socket_addrs()?
             .next()
-            .ok_or_else(|| {
-                anyhow!("Couldn't parse to IP address nor find IP address with hostname")
-            })?
+            .ok_or_else(|| eyre!("Couldn't parse to IP address nor find IP address with hostname"))?
             .ip()),
     }
 }
@@ -46,7 +44,7 @@ fn pipe_to_ipaddrs() -> Result<Vec<IpAddr>> {
         .lines()
         .map(|rstring| {
             rstring
-                .map_err(|e| anyhow!("Failed to pipe in values or non-UTF-8 values found: {e}"))
+                .map_err(|e| eyre!("Failed to pipe in values or non-UTF-8 values found: {e}"))
                 .and_then(string_to_ipaddr)
         })
         .collect::<Result<Vec<IpAddr>>>()
@@ -62,6 +60,7 @@ fn read_file_to_ipaddrs(file_path: PathBuf) -> Result<Vec<IpAddr>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    color_eyre::install()?;
     let args = Args::parse();
     let hosts: Vec<IpAddr> = match (args.from, args.to, args.file, args.pipe) {
         (Some(from), Some(to), None, false) => Ipv4AddrRange::new(from.parse()?, to.parse()?)
@@ -70,7 +69,7 @@ async fn main() -> Result<()> {
         (None, None, Some(file_path), false) => read_file_to_ipaddrs(file_path)?,
         (None, None, None, true) => pipe_to_ipaddrs()?,
         _ => {
-            return Err(anyhow!(
+            return Err(eyre!(
                 "Invalid arguments. Use either --from and --to for IP range, --file for a file of hostnames/ips, or --pipe to read from stdin."
             ));
         }
