@@ -1,11 +1,13 @@
 use clap::Parser;
 use color_eyre::eyre::{Result, eyre};
 use ipnet::Ipv4AddrRange;
+use ping::ping;
 use std::io::BufRead;
 use std::net::IpAddr;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Semaphore;
 
 /// Scan ips or hostnames to see if pingable.
@@ -81,7 +83,7 @@ async fn main() -> Result<()> {
         let permit = semaphore.clone().acquire_owned().await?;
         let t = tokio::spawn(async move {
             let _permit = permit; // Keep the permit alive for the duration of the task
-            match ping::new(host).send() {
+            match ping(host, Duration::from_secs(1)) {
                 Ok(_) => println!("{host}"),
                 Err(e) => eprintln!("Error pinging {host}: {e}"),
             }
