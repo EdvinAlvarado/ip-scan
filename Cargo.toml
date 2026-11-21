@@ -1,14 +1,17 @@
 [package]
 name = "scan"
-version = "3.3.0"
+version = "3.3.1"
 edition = "2024"
 
-[target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-gcc"
+# [target.x86_64-pc-windows-gnu]
+# linker = "x86_64-w64-mingw32-gcc"
 
 [profile.release]
 strip = true # Automatically strip symbols from the binary
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev.package.backtrace]
+opt-level = 3
 
 [dependencies]
 ipnet = "2.12"
